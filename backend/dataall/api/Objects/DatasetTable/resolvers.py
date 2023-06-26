@@ -9,6 +9,7 @@ from ..Dataset.resolvers import get_dataset
 from ....api.context import Context
 from ....aws.handlers.service_handlers import Worker
 from ....aws.handlers.sts import SessionHelper
+from ....aws.handlers.athena import Athena
 from ....db import permissions, models
 from ....db.api import ResourcePolicy, Glossary
 from ....searchproxy import indexers
@@ -119,12 +120,14 @@ def preview(context, source, tableUri: str = None):
             )
         env = db.api.Environment.get_environment_by_uri(session, dataset.environmentUri)
         env_workgroup = {}
-        boto3_session = SessionHelper.remote_session(accountid=table.AWSAccountId)
-        creds = boto3_session.get_credentials()
+        creds = SessionHelper.get_credentials(accountid=table.AWSAccountId)
         try:
-            env_workgroup = boto3_session.client(
-                'athena', region_name=env.region
-            ).get_work_group(WorkGroup=env.EnvironmentDefaultAthenaWorkGroup)
+
+            env_workgroup = Athena.get_workgroup(
+                AwsAccountId=table.AWSAccountId,
+                region=table.region,
+                workgroup=env.EnvironmentDefaultAthenaWorkGroup
+            )
         except ClientError as e:
             log.info(
                 f'Workgroup {env.EnvironmentDefaultAthenaWorkGroup} can not be found'

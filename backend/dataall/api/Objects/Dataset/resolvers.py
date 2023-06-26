@@ -13,7 +13,7 @@ from ....api.context import Context
 from ....aws.handlers.glue import Glue
 from ....aws.handlers.service_handlers import Worker
 from ....aws.handlers.sts import SessionHelper
-from ....aws.handlers.sns import Sns
+from ....aws.handlers.s3 import S3
 from ....aws.handlers.quicksight import Quicksight
 from ....db import paginate, exceptions, permissions, models
 from ....db.api import Dataset, Environment, ShareObject, ResourcePolicy
@@ -141,24 +141,12 @@ def get_file_upload_presigned_url(
     with context.engine.scoped_session() as session:
         dataset = Dataset.get_dataset_by_uri(session, datasetUri)
 
-    s3_client = SessionHelper.remote_session(dataset.AwsAccountId).client(
-        's3',
-        region_name=dataset.region,
-        config=Config(signature_version='s3v4', s3={'addressing_style': 'virtual'}),
+    S3.get_presigned_post(
+        account_id=dataset.AwsAccountId,
+        region=dataset.region,
+        bucket=dataset.S3BucketName,
+        key=input.get('prefix', 'uploads') + '/' + input.get('fileName'),
     )
-    try:
-        s3_client.get_bucket_acl(
-            Bucket=dataset.S3BucketName, ExpectedBucketOwner=dataset.AwsAccountId
-        )
-        response = s3_client.generate_presigned_post(
-            Bucket=dataset.S3BucketName,
-            Key=input.get('prefix', 'uploads') + '/' + input.get('fileName'),
-            ExpiresIn=15 * 60,
-        )
-
-        return json.dumps(response)
-    except ClientError as e:
-        raise e
 
 
 def list_datasets(context: Context, source, filter: dict = None):
@@ -434,11 +422,7 @@ def generate_dataset_access_token(context, source, datasetUri: str = None):
         )
         dataset = Dataset.get_dataset_by_uri(session, datasetUri)
 
-    pivot_session = SessionHelper.remote_session(dataset.AwsAccountId)
-    aws_session = SessionHelper.get_session(
-        base_session=pivot_session, role_arn=dataset.IAMDatasetAdminRoleArn
-    )
-    c = aws_session.get_credentials()
+    c = SessionHelper.get_credentials(accountid=dataset.AwsAccountId, role=dataset.IAMDatasetAdminRoleArn)
     credentials = {
         'AccessKey': c.access_key,
         'SessionKey': c.secret_key,

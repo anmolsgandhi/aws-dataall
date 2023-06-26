@@ -294,9 +294,7 @@ def get_creds(context: Context, source, DataPipelineUri: str = None):
 
 def _get_creds_from_aws(pipeline, env_role_arn):
     aws_account_id = pipeline.AwsAccountId
-    aws_session = SessionHelper.remote_session(aws_account_id)
-    env_session = SessionHelper.get_session(aws_session, role_arn=env_role_arn)
-    c = env_session.get_credentials()
+    c = SessionHelper.get_credentials(accountid=aws_account_id, role=env_role_arn)
     body = json.dumps(
         {
             'AWS_ACCESS_KEY_ID': c.access_key,

@@ -10,9 +10,7 @@ def random_key():
 
 
 def run_query(environment: models.Environment, sql=None):
-
-    boto3_session = SessionHelper.remote_session(accountid=environment.AwsAccountId)
-    creds = boto3_session.get_credentials()
+    creds = SessionHelper.get_credentials(accountid=environment.AwsAccountId)
     connection = connect(
         aws_access_key_id=creds.access_key,
         aws_secret_access_key=creds.secret_key,
@@ -47,9 +45,7 @@ def run_query(environment: models.Environment, sql=None):
 
 
 def run_query_with_role(environment: models.Environment, environment_group: models.EnvironmentGroup, sql=None):
-    base_session = SessionHelper.remote_session(accountid=environment.AwsAccountId)
-    boto3_session = SessionHelper.get_session(base_session=base_session, role_arn=environment_group.environmentIAMRoleArn)
-    creds = boto3_session.get_credentials()
+    creds = SessionHelper.get_credentials(accountid=environment.AwsAccountId, role=environment_group.environmentIAMRoleArn)
     connection = connect(
         aws_access_key_id=creds.access_key,
         aws_secret_access_key=creds.secret_key,

@@ -201,6 +201,17 @@ class SessionHelper:
         return session
 
     @classmethod
+    def get_credentials(cls, accountid, role=None, aws_session=None):
+        """
+        Return the botocore.credentials.Credentials object associated with this session if a role is provided
+        the session will be created for that role
+        """
+        if not aws_session:
+            aws_session = SessionHelper.remote_session(accountid=accountid, role=role)
+        env_creds = aws_session.get_credentials()
+        return env_creds
+
+    @classmethod
     def get_account(cls, session=None):
         """Returns the aws account id associated with the default session, or the provided session
         Args:

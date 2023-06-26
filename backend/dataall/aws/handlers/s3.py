@@ -1,4 +1,6 @@
 import logging
+from botocore.exceptions import ClientError
+from botocore.config import Config
 
 from ... import db
 from ...db import models
@@ -9,6 +11,63 @@ log = logging.getLogger(__name__)
 
 
 class S3:
+
+    @staticmethod
+    def client(account_id: str, region: str, client_type: str, config):
+        if account_id:
+            session = SessionHelper.remote_session(accountid=account_id)
+            return session.client(client_type, region_name=region)
+        else:
+            log.info("S3 session in central account")
+            session = SessionHelper.get_session()
+            return session.client('s3', region_name=region, config=config)
+
+    @staticmethod
+    def get_presigned_url(region, bucket, key):
+        s3_client = S3.client(
+            region=region,
+            config=Config(
+                signature_version='s3v4', s3={'addressing_style': 'virtual'}
+            )
+        )
+        try:
+            presigned_url = s3_client.generate_presigned_url(
+                'get_object',
+                Params=dict(
+                    Bucket=bucket,
+                    Key=key,
+                ),
+                ExpiresIn=15 * 60,
+            )
+        except ClientError as e:
+            log.error(
+                f'Failed to get presigned URL for pivot role template due to: {e}'
+            )
+            raise e
+
+        return presigned_url
+    @staticmethod
+    def get_presigned_post(account_id, region, bucket, key):
+        s3_client = S3.client(
+            region=region,
+            config=Config(
+                signature_version='s3v4', s3={'addressing_style': 'virtual'}
+            )
+        )
+        try:
+            s3_client.get_bucket_acl(
+                Bucket=bucket, ExpectedBucketOwner=account_id
+            )
+            response = s3_client.generate_presigned_post(
+                Bucket=bucket,
+                Key=key,
+                ExpiresIn=15 * 60,
+            )
+
+            return json.dumps(response)
+        except ClientError as e:
+            raise e
+
     @staticmethod
     @Worker.handler(path='s3.prefix.create')
     def create_dataset_location(engine, task: models.Task):
@@ -18,11 +77,6 @@ class S3:
             )
             S3.create_bucket_prefix(location)
             return location
-
-    @staticmethod
-    def client(account_id: str, region: str, client_type: str):
-        session = SessionHelper.remote_session(accountid=account_id)
-        return session.client(client_type, region_name=region)
 
     @staticmethod
     def create_bucket_prefix(location):

@@ -2,18 +2,15 @@ import json
 import logging
 import os
 
-import boto3
-from botocore.config import Config
-from botocore.exceptions import ClientError
 from sqlalchemy import and_
 
 from ..Organization.resolvers import *
 from ..Stack import stack_helper
 from ...constants import *
 from ....aws.handlers.sts import SessionHelper
-from ....aws.handlers.quicksight import Quicksight
 from ....aws.handlers.cloudformation import CloudFormation
 from ....aws.handlers.iam import IAM
+from ....aws.handlers.s3 import S3
 from ....aws.handlers.parameter_store import ParameterStoreManager
 from ....db import exceptions, permissions
 from ....db.api import Environment, ResourcePolicy, Stack
@@ -436,7 +433,7 @@ def list_shared_with_environment_data_items(
 
 
 def _get_environment_group_aws_session(
-    session, username, groups, environment, groupUri=None
+    session, username, groups, environment, groupUri=None, with_credentials=False
 ):
     if groupUri and groupUri not in groups:
         raise exceptions.UnauthorizedOperation(
@@ -479,6 +476,8 @@ def _get_environment_group_aws_session(
                 action='ENVIRONMENT_AWS_ACCESS',
                 message=f'Failed to start an AWS session on environment {environment.AwsAccountId}',
             )
+    if with_credentials:
+        return SessionHelper.get_credentials(accountid=environment.AwsAccountId, aws_session=aws_session)
     return aws_session
 
 
@@ -528,7 +527,8 @@ def generate_environment_access_token(
             groups=context.groups,
             environment=environment,
             groupUri=groupUri,
-        ).get_credentials()
+            with_credentials=True
+        )
         credentials = {
             'AccessKey': c.access_key,
             'SessionKey': c.secret_key,
@@ -676,28 +676,12 @@ def get_pivot_role_template(context: Context, source, organizationUri=None):
                 action='GET_PIVOT_ROLE_TEMPLATE',
                 message='Pivot Yaml template file could not be found on Amazon S3 bucket',
             )
-        try:
-            s3_client = boto3.client(
-                's3',
-                region_name=os.getenv('AWS_REGION', 'eu-central-1'),
-                config=Config(
-                    signature_version='s3v4', s3={'addressing_style': 'virtual'}
-                ),
-            )
-            presigned_url = s3_client.generate_presigned_url(
-                'get_object',
-                Params=dict(
-                    Bucket=pivot_role_bucket,
-                    Key=pivot_role_bucket_key,
-                ),
-                ExpiresIn=15 * 60,
-            )
-            return presigned_url
-        except ClientError as e:
-            log.error(
-                f'Failed to get presigned URL for pivot role template due to: {e}'
-            )
-            raise e
+        presigned_url = S3.get_presigned_url(
+            region=os.getenv('AWS_REGION', 'eu-central-1'),
+            bucket=pivot_role_bucket,
+            key=pivot_role_bucket_key
+        )
+        return presigned_url
 
 
 def get_external_id(context: Context, source, organizationUri=None):

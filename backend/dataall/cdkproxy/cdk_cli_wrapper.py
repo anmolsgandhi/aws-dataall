@@ -139,8 +139,7 @@ def deploy_cdk_stack(engine: Engine, stackid: str, app_path: str = None, path: s
             ]
 
             if stack.stack == 'cdkpipeline':
-                aws = SessionHelper.remote_session(stack.accountid)
-                creds = aws.get_credentials()
+                creds = SessionHelper.get_credentials(stack.accountid)
                 env.update(
                     {
                         'CDK_DEFAULT_REGION': stack.region,

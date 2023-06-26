@@ -50,24 +50,22 @@ class CloudFormation:
                 'region': task.payload['region'],
                 'stack_name': task.payload['stack_name'],
             }
-            CloudFormation.delete_cloudformation_stack(**data)
+            CloudFormation._delete_cloudformation_stack(**data)
         except ClientError as e:
             log.error(f'Failed to delete CFN stack{task.targetUri}: {e}')
             raise e
         return {'status': 200, 'stackDeleted': True}
 
     @staticmethod
-    def delete_cloudformation_stack(**data):
+    def _delete_cloudformation_stack(**data):
         accountid = data['accountid']
         region = data['region']
         stack_name = data['stack_name']
         cdk_role_arn = data['cdk_role_arn']
         try:
-            aws_session = SessionHelper.remote_session(accountid=accountid)
-            cfnclient = aws_session.client('cloudformation', region_name=region)
-            response = cfnclient.delete_stack(
+            cfn = CloudFormation.client(AwsAccountId=accountid, region=region)
+            response = cfn.delete_stack(
                 StackName=stack_name,
-                RoleARN=cdk_role_arn,
                 ClientRequestToken=str(uuid.uuid4()),
             )
             log.info(f'Stack {stack_name} deleted: {response}')
@@ -95,9 +93,8 @@ class CloudFormation:
             accountid = data['accountid']
             region = data['region']
             stack_name = data['stack_name']
-            aws_session = SessionHelper.remote_session(accountid=accountid)
-            cfnclient = aws_session.client('cloudformation', region_name=region)
-            response = cfnclient.describe_stacks(StackName=stack_name)
+            cfn = CloudFormation.client(AwsAccountId=accountid, region=region)
+            response = cfn.describe_stacks(StackName=stack_name)
             return response['Stacks'][0]
         except ClientError as e:
             raise e
@@ -178,10 +175,9 @@ class CloudFormation:
         accountid = data['accountid']
         region = data.get('region', 'eu-west-1')
         stack_name = data['stack_name']
-        aws_session = SessionHelper.remote_session(accountid=accountid)
-        client = aws_session.client('cloudformation', region_name=region)
+        cfn = CloudFormation.client(AwsAccountId=accountid, region=region)
         try:
-            stack_resources = client.describe_stack_resources(StackName=stack_name)
+            stack_resources = cfn.describe_stack_resources(StackName=stack_name)
             log.info(f'Stack describe resources response : {stack_resources}')
             return stack_resources
         except ClientError as e:
@@ -192,26 +188,10 @@ class CloudFormation:
         accountid = data['accountid']
         region = data.get('region', 'eu-west-1')
         stack_name = data['stack_name']
-        aws_session = SessionHelper.remote_session(accountid=accountid)
-        client = aws_session.client('cloudformation', region_name=region)
+        cfn = CloudFormation.client(AwsAccountId=accountid, region=region)
         try:
-            stack_events = client.describe_stack_events(StackName=stack_name)
+            stack_events = cfn.describe_stack_events(StackName=stack_name)
             log.info(f'Stack describe events response : {stack_events}')
             return stack_events
         except ClientError as e:
             log.error(e, exc_info=True)
-
-
-@Worker.handler(path='environment.check.cdk.boostrap')
-def check_cdk_boostrap(engine: Engine, task: models.Task):
-    with engine.scoped_session() as session:
-        account = task.payload.get('account')
-        region = task.payload.get('region')
-        aws = SessionHelper.remote_session(accountid=account)
-        cfn = aws.client('cloudformation', region_name=region)
-        response = cfn.describe_stacks(StackName='CDKToolkit')
-        stacks = response['Stacks']
-        if len(stacks):
-            return True
-        else:
-            return False

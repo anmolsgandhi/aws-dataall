@@ -2,12 +2,11 @@ import logging
 import os
 import sys
 import subprocess
-import boto3
 
 from ... import db
 from ...db.api import Environment, Pipeline
 from ...aws.handlers.sts import SessionHelper
-from botocore.exceptions import ClientError
+from ...aws.handlers.codecommit import CodeCommit
 
 logger = logging.getLogger(__name__)
 
@@ -42,13 +41,16 @@ class CDKPipelineStack:
             # Development environments
             self.development_environments = Pipeline.query_pipeline_environments(session, target_uri)
 
-        self.env, aws = CDKPipelineStack._set_env_vars(self.pipeline_environment)
+        self.env = CDKPipelineStack._set_env_vars(self.pipeline_environment)
 
         self.code_dir_path = os.path.dirname(os.path.abspath(__file__))
 
         try:
-            codecommit_client = aws.client('codecommit', region_name=self.pipeline_environment.region)
-            repository = CDKPipelineStack._check_repository(codecommit_client, self.pipeline.repo)
+            repository = CodeCommit.check_repository(
+                AwsAccountId=self.pipeline.AwsAccountId,
+                region=self.pipeline_environment.region,
+                repo_name=self.pipeline.repo
+            )
             if repository:
                 self.venv_name = None
                 self.code_dir_path = os.path.realpath(
@@ -243,22 +245,8 @@ app.synth()
         return
 
     @staticmethod
-    def _check_repository(codecommit_client, repo_name):
-        repository = None
-        logger.info(f"Checking Repository Exists: {repo_name}")
-        try:
-            repository = codecommit_client.get_repository(repositoryName=repo_name)
-        except ClientError as e:
-            if e.response['Error']['Code'] == 'RepositoryDoesNotExistException':
-                logger.debug(f'Repository does not exists {repo_name} %s', e)
-            else:
-                raise e
-        return repository if repository else None
-
-    @staticmethod
     def _set_env_vars(pipeline_environment):
-        aws = SessionHelper.remote_session(pipeline_environment.AwsAccountId)
-        env_creds = aws.get_credentials()
+        env_creds = SessionHelper.get_credentials(pipeline_environment.AwsAccountId)
 
         python_path = '/:'.join(sys.path)[1:] + ':/code' + os.getenv('PATH')
 
@@ -278,4 +266,4 @@ app.synth()
                     'AWS_SESSION_TOKEN': env_creds.token
                 }
             )
-        return env, aws
+        return env

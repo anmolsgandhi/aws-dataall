@@ -1,6 +1,11 @@
+import logging
+from botocore.exceptions import ClientError
 from .service_handlers import Worker
 from .sts import SessionHelper
 from ...db import models, Engine
+
+
+logger = logging.getLogger(__name__)
 
 
 class CodeCommit:
@@ -98,3 +103,17 @@ class CodeCommit:
             )
             response = cc_client.delete_repository(repositoryName=task.payload.get("repo_name", "dataall-repo"))
             return True
+
+    @staticmethod
+    def check_repository(AwsAccountId, region, repo_name):
+        repository = None
+        logger.info(f"Checking Repository Exists: {repo_name}")
+        codecommit_client = CodeCommit.client(AwsAccountId, region)
+        try:
+            repository = codecommit_client.get_repository(repositoryName=repo_name)
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'RepositoryDoesNotExistException':
+                logger.debug(f'Repository does not exists {repo_name} %s', e)
+            else:
+                raise e
+        return repository if repository else None

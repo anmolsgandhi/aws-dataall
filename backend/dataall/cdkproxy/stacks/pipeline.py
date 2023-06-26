@@ -12,12 +12,11 @@ from aws_cdk import aws_codepipeline_actions as codepipeline_actions
 
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_kms as kms
-
 from aws_cdk.aws_s3_assets import Asset
-from botocore.exceptions import ClientError
 
 from .manager import stack
 from ...aws.handlers.sts import SessionHelper
+from ...aws.handlers.codecommit import CodeCommit
 from ... import db
 from ...db import models
 from ...db.api import Environment, Pipeline, Dataset
@@ -173,9 +172,12 @@ class PipelineStack(Stack):
         )
 
         try:
-            env_vars, aws = PipelineStack._set_env_vars(pipeline_environment)
-            codecommit_client = aws.client('codecommit', region_name=pipeline_environment.region)
-            repository = PipelineStack._check_repository(codecommit_client, pipeline.repo)
+            env_vars = PipelineStack._set_env_vars(pipeline_environment)
+            repository = CodeCommit.check_repository(
+                AwsAccountId=pipeline_environment.AwsAccountId,
+                region=pipeline_environment.region,
+                repo_name=pipeline.repo
+            )
             if repository:
                 PipelineStack.write_ddk_json_multienvironment(path=code_dir_path, output_file="ddk.json", pipeline_environment=pipeline_environment, development_environments=development_environments)
 
@@ -537,8 +539,7 @@ class PipelineStack(Stack):
 
     @staticmethod
     def _set_env_vars(pipeline_environment):
-        aws = SessionHelper.remote_session(pipeline_environment.AwsAccountId)
-        env_creds = aws.get_credentials()
+        env_creds = SessionHelper.get_credentials(pipeline_environment.AwsAccountId)
 
         env = {
             'AWS_REGION': pipeline_environment.region,
@@ -554,17 +555,4 @@ class PipelineStack(Stack):
                     'AWS_SESSION_TOKEN': env_creds.token
                 }
             )
-        return env, aws
-
-    @staticmethod
-    def _check_repository(codecommit_client, repo_name):
-        repository = None
-        logger.info(f"Checking Repository Exists: {repo_name}")
-        try:
-            repository = codecommit_client.get_repository(repositoryName=repo_name)
-        except ClientError as e:
-            if e.response['Error']['Code'] == 'RepositoryDoesNotExistException':
-                logger.debug(f'Repository does not exists {repo_name} %s', e)
-            else:
-                raise e
-        return repository if repository else None
+        return env
